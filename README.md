@@ -297,34 +297,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **FastAPI** for the high-performance web framework
 - **React** and **Vite** for the modern frontend stack
 
-## 📞 Support
-
-- **Documentation**: [Full documentation](https://dealdesk.readthedocs.io)
-- **Issues**: [GitHub Issues](https://github.com/your-org/dealdesk/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/dealdesk/discussions)
-- **Email**: support@dealdesk.dev
-
-## 🗺️ Roadmap
-
-### v1.1 (Q2 2024)
-- [ ] Advanced deal analytics dashboard
-- [ ] Integration with Bloomberg Terminal
-- [ ] Mobile-responsive design improvements
-- [ ] Multi-language support
-
-### v1.2 (Q3 2024)
-- [ ] Advanced document OCR
-- [ ] Custom AI model fine-tuning
-- [ ] Enterprise SSO integration
-- [ ] Advanced reporting and exports
-
-### v2.0 (Q4 2024)
-- [ ] Multi-tenant architecture
-- [ ] Advanced workflow automation
-- [ ] Integration with CRM systems
-- [ ] AI-powered deal recommendations
-
----
-
 **Built with ❤️ for the investment banking community**
 
