@@ -72,10 +72,18 @@ export function Sidebar({ className }: SidebarProps) {
       <div className="border-t border-surface-light">
         <AgentStatusPanel />
         <div className="p-2">
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted hover:text-white hover:bg-surface-light transition-colors">
+          <Link
+            to="/settings"
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+              location.pathname === '/settings'
+                ? 'bg-accent text-white'
+                : 'text-muted hover:text-white hover:bg-surface-light'
+            )}
+          >
             <Settings className="w-4 h-4" />
             Settings
-          </button>
+          </Link>
         </div>
       </div>
     </div>

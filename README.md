@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-19+-blue.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue.svg)](https://www.typescriptlang.org/)
 
-DealDesk is a comprehensive M&A intelligence platform that combines AI-powered analysis with modern web technologies to streamline the deal lifecycle for investment bankers. Built with FastAPI, React, and LangGraph, it provides real-time insights, automated analysis, and collaborative deal management.
+DealDesk is a comprehensive M&A intelligence platform that combines AI-powered analysis with modern web technologies to streamline deal lifecycle for investment bankers. Built with FastAPI, React, and LangGraph, it provides real-time insights, automated analysis, and collaborative deal management.
 
 ## ✨ Features
 
@@ -24,6 +24,13 @@ DealDesk is a comprehensive M&A intelligence platform that combines AI-powered a
 - **Document Intelligence**: Automated risk extraction and key term analysis
 - **News Intelligence**: Deal-specific market sentiment and relevant news
 
+### 🔧 Phase 2: Advanced AI Configuration
+- **Bring Your Own LLM (BYOLLM)**: Support for Anthropic Claude, OpenAI GPT, Google Gemini, Azure OpenAI, and Ollama
+- **Deep Search**: Multi-step web research pipeline with Tavily, Perplexity, and Exa AI providers
+- **MCP Servers**: Model Context Protocol integration for external data sources (SEC EDGAR, Financial APIs, News, Slack, Custom)
+- **Per-Agent Model Overrides**: Configure different LLMs for specific agents (fast models for news, powerful models for analysis)
+- **Encrypted API Key Storage**: Secure credential management with Fernet encryption
+
 ### 📊 Real-time Intelligence
 - **Server-Sent Events (SSE)** for streaming AI responses
 - **WebSocket integration** for live collaboration
@@ -35,6 +42,9 @@ DealDesk is a comprehensive M&A intelligence platform that combines AI-powered a
 - **Async/await** throughout for optimal performance
 - **Type-safe** frontend with TypeScript
 - **Responsive UI** with TailwindCSS and modern design patterns
+- **Dynamic LLM Factory**: Runtime LLM instantiation with Redis caching
+- **MCP Registry**: Centralized management of external tool integrations
+- **Modular Agent System**: LangGraph orchestration with tool discovery
 
 ## 🚀 Quick Start
 
@@ -95,7 +105,10 @@ DealDesk is a comprehensive M&A intelligence platform that combines AI-powered a
 - **Redis**: Pub/sub, caching, and session management
 - **Celery**: Distributed task queue for document processing
 - **LangGraph**: Multi-agent orchestration framework
-- **Anthropic Claude**: Advanced AI analysis capabilities
+- **LLM Factory**: Dynamic LLM instantiation with multi-provider support
+- **MCP Registry**: Model Context Protocol integration hub
+- **Deep Search**: Multi-step web research pipeline
+- **Fernet Encryption**: Secure API key storage and management
 
 ### Frontend Stack
 - **React 19**: Modern UI framework with concurrent features
@@ -105,6 +118,7 @@ DealDesk is a comprehensive M&A intelligence platform that combines AI-powered a
 - **Zustand**: Lightweight state management
 - **React Query**: Server state management and caching
 - **Axios**: HTTP client with interceptors
+- **Material-UI**: Component library for settings interface
 
 ### Infrastructure
 - **Docker**: Containerization for consistent environments
@@ -112,6 +126,14 @@ DealDesk is a comprehensive M&A intelligence platform that combines AI-powered a
 - **Redis**: In-memory data structure store
 - **WebSocket**: Real-time bidirectional communication
 - **SSE**: Server-sent events for streaming responses
+
+### Phase 2 Architectural Marvels
+- **Dynamic LLM Factory**: Runtime instantiation of any supported LLM provider with Redis caching and per-agent overrides
+- **MCP Registry**: Centralized hub for managing external tool integrations with automatic discovery and connection management
+- **Deep Search Pipeline**: Multi-step research process with query generation, parallel search, content fetching, and AI synthesis
+- **Encrypted Configuration**: Secure storage of sensitive API keys using cryptography.fernet with database encryption at rest
+- **Streaming Architecture**: Server-Sent Events for real-time research progress and agent status updates
+- **Modular Tool System**: LangChain tool integration with MCP client abstraction for seamless external API access
 
 ## 📁 Project Structure
 

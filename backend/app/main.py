@@ -1,4 +1,4 @@
-"""FastAPI main application entry point."""
+"""FastAPI main application entry point with Phase 2 extensions."""
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -13,11 +13,16 @@ from app.routers import (
     pitchbook_router,
     news_router,
     documents_router,
-    ws_router
+    ws_router,
+    settings_router
 )
 from app.services.redis_service import get_redis_client, close_redis_connection
 from app.services.deal_service import DealService
+from app.services.llm_factory import llm_factory, encrypt_api_key
+from app.services.mcp_registry import mcp_registry
 from app.database import AsyncSessionLocal
+from app.models.llm_config import LLMConfig, SearchConfig
+from sqlalchemy import select
 
 settings = get_settings()
 
@@ -47,6 +52,42 @@ async def lifespan(app: FastAPI):
         await DealService.seed_deals_if_empty(session)
         await session.commit()
         print("✅ Database seeded with initial deals")
+        
+        # Initialize default LLM config if none exists
+        result = await session.execute(select(LLMConfig).where(LLMConfig.is_active == True))
+        existing_llm = result.scalar_one_or_none()
+        
+        if not existing_llm and settings.ANTHROPIC_API_KEY:
+            default_llm = LLMConfig(
+                provider="anthropic",
+                model_id="claude-sonnet-4-20250514",
+                api_key=encrypt_api_key(settings.ANTHROPIC_API_KEY),
+                is_active=True
+            )
+            session.add(default_llm)
+            await session.commit()
+            print("✅ Default LLM configuration created")
+        
+        # Initialize default search config if none exists
+        result = await session.execute(select(SearchConfig).where(SearchConfig.is_active == True))
+        existing_search = result.scalar_one_or_none()
+        
+        if not existing_search:
+            default_search = SearchConfig(
+                provider="tavily",
+                api_key=None,  # User must configure
+                max_results_per_query=5,
+                max_queries_per_task=5,
+                enable_full_page_fetch=True,
+                is_active=True
+            )
+            session.add(default_search)
+            await session.commit()
+            print("✅ Default search configuration created (API key required)")
+        
+        # Initialize MCP Registry
+        await mcp_registry.initialise(session)
+        print("✅ MCP Registry initialized")
     
     print("🎯 DealDesk API ready")
     
@@ -62,7 +103,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DealDesk API",
     description="Agentic M&A Intelligence Platform for Investment Bankers",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -83,6 +124,7 @@ app.include_router(pitchbook_router, prefix="/api/v1")
 app.include_router(news_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
+app.include_router(settings_router, prefix="/api/v1")  # Phase 2: Settings router
 
 
 @app.get("/health")

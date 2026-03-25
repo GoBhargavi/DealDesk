@@ -1,13 +1,16 @@
-"""LangGraph orchestrator for multi-agent system."""
+"""LangGraph orchestrator for multi-agent system with configurable LLM and MCP tools."""
 
-from typing import TypedDict, Dict, Any, List, Optional, Callable
+from typing import TypedDict, Dict, Any, List, Optional, Callable, Awaitable
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.comps_agent import CompsAgent
 from app.agents.dcf_agent import DCFAgent
 from app.agents.news_agent import NewsAgent
 from app.agents.document_agent import DocumentAgent
+from app.services.mcp_registry import mcp_registry
 
 
 class AgentState(TypedDict):
@@ -17,8 +20,9 @@ class AgentState(TypedDict):
     input_data: Dict[str, Any]
     partial_results: Dict[str, Any]
     final_result: Dict[str, Any]
-    streaming_callback: Optional[Callable[[str], None]]
+    streaming_callback: Optional[Callable[[str, Dict], Awaitable[None]]]
     errors: List[str]
+    db: Optional[AsyncSession]  # Database session for LLM configuration
 
 
 def create_orchestrator_graph() -> StateGraph:
@@ -26,7 +30,8 @@ def create_orchestrator_graph() -> StateGraph:
     Create the LangGraph orchestration graph for multi-agent system.
     
     The graph routes tasks to appropriate agents and handles pitchbook
-    generation as a multi-step workflow.
+    generation as a multi-step workflow. Integrates MCP tools for
+    external data access.
     """
     
     # Initialize agents
@@ -53,12 +58,18 @@ def create_orchestrator_graph() -> StateGraph:
         """Execute comps analysis agent."""
         try:
             input_data = state["input_data"]
+            db = state.get("db")
+            
+            if not db:
+                raise ValueError("Database session required for LLM configuration")
+            
             result = await comps_agent.analyze(
                 deal_id=state["deal_id"],
                 target_company=input_data.get("target_company", ""),
                 sector=input_data.get("sector", ""),
                 deal_type=input_data.get("deal_type", ""),
                 deal_value_usd=input_data.get("deal_value_usd"),
+                db=db,
                 streaming_callback=state.get("streaming_callback")
             )
             return {
@@ -75,11 +86,17 @@ def create_orchestrator_graph() -> StateGraph:
         """Execute DCF agent for assumption suggestions."""
         try:
             input_data = state["input_data"]
+            db = state.get("db")
+            
+            if not db:
+                raise ValueError("Database session required for LLM configuration")
+            
             result = await dcf_agent.suggest_assumptions(
                 deal_id=state["deal_id"],
                 company_description=input_data.get("company_description", ""),
                 sector=input_data.get("sector", ""),
                 recent_financials_text=input_data.get("recent_financials_text"),
+                db=db,
                 streaming_callback=state.get("streaming_callback")
             )
             return {
@@ -96,10 +113,16 @@ def create_orchestrator_graph() -> StateGraph:
         """Execute news agent for intelligence gathering."""
         try:
             input_data = state["input_data"]
+            db = state.get("db")
+            
+            if not db:
+                raise ValueError("Database session required for LLM configuration")
+            
             result = await news_agent.fetch_intelligence(
                 deal_id=state["deal_id"],
                 target_company=input_data.get("target_company", ""),
                 sector=input_data.get("sector", ""),
+                db=db,
                 streaming_callback=state.get("streaming_callback")
             )
             return {
@@ -116,11 +139,17 @@ def create_orchestrator_graph() -> StateGraph:
         """Execute document agent for analysis."""
         try:
             input_data = state["input_data"]
+            db = state.get("db")
+            
+            if not db:
+                raise ValueError("Database session required for LLM configuration")
+            
             result = await document_agent.analyze(
                 document_id=input_data.get("document_id", ""),
                 document_text=input_data.get("document_text", ""),
                 filename=input_data.get("filename", ""),
                 file_type=input_data.get("file_type", ""),
+                db=db,
                 streaming_callback=state.get("streaming_callback")
             )
             return {

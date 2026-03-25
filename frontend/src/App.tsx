@@ -8,6 +8,7 @@ import { DCFPage } from '@/pages/DCFPage'
 import { PitchbookPage } from '@/pages/PitchbookPage'
 import { NewsPage } from '@/pages/NewsPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
+import SettingsPage from '@/pages/SettingsPage'
 import '@/index.css'
 
 const queryClient = new QueryClient({
@@ -35,6 +36,7 @@ function App() {
             <Route path="/pitchbook" element={<PitchbookPage />} />
             <Route path="/news" element={<NewsPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </div>
       </Router>

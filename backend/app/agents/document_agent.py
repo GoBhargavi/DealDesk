@@ -1,10 +1,15 @@
-"""Document Agent for analyzing CIMs, NDAs, and financial filings."""
+"""Document Agent for analyzing CIMs, NDAs, and financial filings with configurable LLM."""
 
 import json
 import asyncio
-from typing import Dict, Any, Optional, Callable
-from anthropic import AsyncAnthropic
-from app.config import get_settings
+from typing import Dict, Any, Optional, Callable, Awaitable
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from app.services.llm_factory import llm_factory
+from app.services.mcp_registry import mcp_registry
 
 
 DOCUMENT_SYSTEM_PROMPT = """You are a legal and financial due diligence specialist at an investment bank. You are reviewing 
@@ -34,12 +39,7 @@ Return JSON in this exact format:
 
 
 class DocumentAgent:
-    """Agent for analyzing legal and financial documents."""
-    
-    def __init__(self):
-        settings = get_settings()
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY) if settings.ANTHROPIC_API_KEY else None
-        self.model = "claude-sonnet-4-20250514"
+    """Agent for analyzing legal and financial documents using configurable LLM."""
     
     async def analyze(
         self,
@@ -47,79 +47,115 @@ class DocumentAgent:
         document_text: str,
         filename: str,
         file_type: str,
-        streaming_callback: Optional[Callable[[str], None]] = None
+        db: AsyncSession,
+        streaming_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
     ) -> Dict[str, Any]:
         """
-        Analyze a document and extract key information.
+        Analyze a document and extract key information using the configured LLM.
         
         Args:
             document_id: The document identifier
             document_text: Extracted text content from the document
             filename: Original filename
             file_type: Document type classification (CIM, NDA, Financial, etc.)
-            streaming_callback: Optional callback for streaming updates
+            db: Database session for LLM configuration
+            streaming_callback: Optional async callback for streaming updates
             
         Returns:
             Dictionary containing document analysis results
         """
-        if streaming_callback:
-            streaming_callback("Reading document content...")
-            await asyncio.sleep(0.3)
-            streaming_callback("Extracting key terms and conditions...")
-            await asyncio.sleep(0.3)
-            streaming_callback("Identifying risk factors...")
-            await asyncio.sleep(0.3)
-            streaming_callback("Generating executive summary...")
-            await asyncio.sleep(0.3)
-        
-        # If no API key or no document text, return mock analysis
-        if not self.client or not document_text:
-            return self._generate_mock_analysis(filename, file_type)
-        
-        # Truncate text if too long
-        max_chars = 15000
-        truncated_text = document_text[:max_chars]
-        if len(document_text) > max_chars:
-            truncated_text += "\n\n[Document truncated for analysis...]"
-        
-        prompt = f"""Analyze this {file_type} document:
+        try:
+            # Get LLM for this agent
+            llm = await llm_factory.get_llm_for_agent("document", db)
+            
+            # Check if MCP SEC EDGAR tools are available
+            mcp_tools = mcp_registry.get_tools(["sec_edgar"])
+            
+            if streaming_callback:
+                await streaming_callback("research_step", {
+                    "step": "reading",
+                    "message": "Reading document content..."
+                })
+                await asyncio.sleep(0.2)
+                await streaming_callback("research_step", {
+                    "step": "extracting",
+                    "message": "Extracting key terms and conditions..."
+                })
+                await asyncio.sleep(0.2)
+                await streaming_callback("research_step", {
+                    "step": "analyzing",
+                    "message": "Identifying risk factors..."
+                })
+                await asyncio.sleep(0.2)
+            
+            # If no document text, return mock analysis
+            if not document_text:
+                return self._generate_mock_analysis(filename, file_type)
+            
+            # Truncate text if too long
+            max_chars = 15000
+            truncated_text = document_text[:max_chars]
+            if len(document_text) > max_chars:
+                truncated_text += "\n\n[Document truncated for analysis...]"
+            
+            # Add MCP context if available
+            mcp_context = ""
+            if mcp_tools:
+                mcp_context = "\n\nNote: SEC EDGAR tools are available for cross-referencing public filings."
+            
+            prompt = f"""Analyze this {file_type} document:
 
 Filename: {filename}
-Document Type: {file_type}
+Document Type: {file_type}{mcp_context}
 
 Document Content:
 {truncated_text}
 
 Extract key information, identify risks, and summarize the document professionally."""
-        
-        try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                system=DOCUMENT_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}]
-            )
             
-            content = response.content[0].text if response.content else ""
+            messages = [
+                SystemMessage(content=DOCUMENT_SYSTEM_PROMPT),
+                HumanMessage(content=prompt)
+            ]
             
+            response = await llm.ainvoke(messages)
+            content = response.content.strip()
+            
+            # Extract JSON from response
             try:
+                if "```" in content:
+                    content = content.split("```")[1]
+                    if content.startswith("json"):
+                        content = content[4:]
+                    content = content.strip()
+                
                 result = json.loads(content)
                 result["document_id"] = document_id
-                return result
-            except json.JSONDecodeError:
-                import re
-                json_match = re.search(r'```json\n(.*?)\n```', content, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group(1))
-                    result["document_id"] = document_id
-                    return result
-                raise
+                result["data_source"] = "llm_generated"
                 
-        except Exception:
+                if streaming_callback:
+                    await streaming_callback("research_done", {
+                        "step": "done",
+                        "message": "Document analysis complete"
+                    })
+                
+                return result
+                
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to parse document analysis from LLM response: {e}")
+                
+        except Exception as e:
+            # Return graceful error with fallback data
+            if streaming_callback:
+                await streaming_callback("agent_error", {
+                    "message": f"Document analysis encountered an issue: {str(e)}. Using template analysis.",
+                    "code": "DOCUMENT_ERROR"
+                })
+            
             return self._generate_mock_analysis(filename, file_type)
     
     def _generate_mock_analysis(self, filename: str, file_type: str) -> Dict[str, Any]:
-        """Generate mock document analysis."""
+        """Generate mock document analysis as fallback."""
         
         doc_types = {
             "CIM": "Confidential Information Memorandum",
@@ -147,7 +183,9 @@ Extract key information, identify risks, and summarize the document professional
                     "ebitda": "$42M (LTM)",
                     "growth_rate": "18% YoY",
                     "margin": "23.3% EBITDA margin"
-                }
+                },
+                "data_source": "llm_generated_fallback",
+                "caveats": "Template analysis used due to service unavailability."
             }
         elif file_type == "NDA":
             return {
@@ -166,7 +204,9 @@ Extract key information, identify risks, and summarize the document professional
                     "governing_law": "Delaware",
                     "return_period": "10 business days upon request",
                     "mutual": "Yes - obligations apply to both parties"
-                }
+                },
+                "data_source": "llm_generated_fallback",
+                "caveats": "Template analysis used due to service unavailability."
             }
         else:
             return {
@@ -180,5 +220,7 @@ Extract key information, identify risks, and summarize the document professional
                     {"risk": "Related Party Transactions", "severity": "Low", "detail": "Minor related party transactions disclosed and adequately documented"},
                     {"risk": "Tax Compliance", "severity": "Low", "detail": "No material tax exposures identified in documentation"}
                 ],
-                "key_terms": {}
+                "key_terms": {},
+                "data_source": "llm_generated_fallback",
+                "caveats": "Template analysis used due to service unavailability."
             }

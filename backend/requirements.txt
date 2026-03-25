@@ -17,3 +17,19 @@ python-multipart==0.0.12
 httpx==0.27.2
 boto3==1.35.0
 pgvector==0.3.2
+
+# Phase 2: BYOLLM - Additional LLM providers
+langchain-openai==0.2.3
+langchain-google-genai==2.0.1
+langchain-ollama==0.2.0
+
+# Phase 2: Deep Search
+tavily-python==0.5.0
+exa-py==1.1.0
+beautifulsoup4==4.12.3
+
+# Phase 2: Encryption for API keys
+cryptography==43.0.3
+
+# Phase 2: SSE support for streaming
+sse-starlette==2.1.0

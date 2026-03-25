@@ -1,10 +1,15 @@
-"""DCF Agent for financial modeling assumptions."""
+"""DCF Agent for financial modeling assumptions with configurable LLM."""
 
 import json
 import asyncio
-from typing import Dict, Any, Optional, Callable, List
-from anthropic import AsyncAnthropic
-from app.config import get_settings
+from typing import Dict, Any, Optional, Callable, List, Awaitable
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from app.services.llm_factory import llm_factory
+from app.services.mcp_registry import mcp_registry
 
 
 DCF_SYSTEM_PROMPT = """You are a financial modeling expert at an investment bank. Given a company description, sector, 
@@ -33,12 +38,7 @@ Return JSON in this exact format:
 
 
 class DCFAgent:
-    """Agent for generating DCF model assumptions."""
-    
-    def __init__(self):
-        settings = get_settings()
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY) if settings.ANTHROPIC_API_KEY else None
-        self.model = "claude-sonnet-4-20250514"
+    """Agent for generating DCF model assumptions using configurable LLM."""
     
     async def suggest_assumptions(
         self,
@@ -46,72 +46,104 @@ class DCFAgent:
         company_description: str,
         sector: str,
         recent_financials_text: Optional[str],
-        streaming_callback: Optional[Callable[[str], None]] = None
+        db: AsyncSession,
+        streaming_callback: Optional[Callable[[str, Dict], Awaitable[None]]] = None
     ) -> Dict[str, Any]:
         """
-        Generate DCF model assumptions.
+        Generate DCF model assumptions using the configured LLM.
         
         Args:
             deal_id: The deal identifier
             company_description: Description of the company
             sector: Industry sector
             recent_financials_text: Optional recent financial data text
-            streaming_callback: Optional callback for streaming updates
+            db: Database session for LLM configuration
+            streaming_callback: Optional async callback for streaming updates
             
         Returns:
             Dictionary containing DCF assumptions
         """
-        if streaming_callback:
-            streaming_callback("Analyzing company profile and sector benchmarks...")
-            await asyncio.sleep(0.5)
-            streaming_callback("Generating revenue growth projections...")
-            await asyncio.sleep(0.5)
-            streaming_callback("Estimating margin expansion trajectory...")
-            await asyncio.sleep(0.5)
-            streaming_callback("Calculating WACC and terminal value assumptions...")
-            await asyncio.sleep(0.5)
-        
-        # If no API key, return mock data
-        if not self.client:
-            return self._generate_mock_assumptions(company_description, sector)
-        
-        financials_context = f"\n\nRecent Financials:\n{recent_financials_text}" if recent_financials_text else ""
-        
-        prompt = f"""Generate DCF model assumptions for:
+        try:
+            # Get LLM for this agent
+            llm = await llm_factory.get_llm_for_agent("dcf", db)
+            
+            # Check if MCP financial data tools are available
+            mcp_tools = mcp_registry.get_tools(["financial_data"])
+            
+            if streaming_callback:
+                await streaming_callback("research_step", {
+                    "step": "analyzing",
+                    "message": "Analyzing company profile and sector benchmarks..."
+                })
+                await asyncio.sleep(0.3)
+                await streaming_callback("research_step", {
+                    "step": "projecting",
+                    "message": "Generating revenue growth projections..."
+                })
+                await asyncio.sleep(0.3)
+                await streaming_callback("research_step", {
+                    "step": "estimating",
+                    "message": "Estimating margin expansion trajectory..."
+                })
+                await asyncio.sleep(0.3)
+            
+            financials_context = f"\n\nRecent Financials:\n{recent_financials_text}" if recent_financials_text else ""
+            
+            # Check if we have MCP tools for real financial data
+            mcp_context = ""
+            if mcp_tools:
+                mcp_context = "\n\nNote: Financial data tools are available for real-time market data integration."
+            
+            prompt = f"""Generate DCF model assumptions for:
 
 Company: {company_description}
-Sector: {sector}{financials_context}
+Sector: {sector}{financials_context}{mcp_context}
 
 Provide realistic 5-year projections based on sector benchmarks and industry dynamics."""
-        
-        try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                system=DCF_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}]
-            )
             
-            content = response.content[0].text if response.content else ""
+            messages = [
+                SystemMessage(content=DCF_SYSTEM_PROMPT),
+                HumanMessage(content=prompt)
+            ]
             
+            response = await llm.ainvoke(messages)
+            content = response.content.strip()
+            
+            # Extract JSON from response
             try:
+                if "```" in content:
+                    content = content.split("```")[1]
+                    if content.startswith("json"):
+                        content = content[4:]
+                    content = content.strip()
+                
                 result = json.loads(content)
                 result["deal_id"] = deal_id
-                return result
-            except json.JSONDecodeError:
-                import re
-                json_match = re.search(r'```json\n(.*?)\n```', content, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group(1))
-                    result["deal_id"] = deal_id
-                    return result
-                raise
+                result["data_source"] = "llm_generated"
                 
-        except Exception:
+                if streaming_callback:
+                    await streaming_callback("research_done", {
+                        "step": "done",
+                        "message": "DCF assumptions generated"
+                    })
+                
+                return result
+                
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to parse DCF assumptions from LLM response: {e}")
+                
+        except Exception as e:
+            # Return graceful error with fallback data
+            if streaming_callback:
+                await streaming_callback("agent_error", {
+                    "message": f"DCF analysis encountered an issue: {str(e)}. Using sector benchmarks.",
+                    "code": "DCF_ERROR"
+                })
+            
             return self._generate_mock_assumptions(company_description, sector)
     
     def _generate_mock_assumptions(self, company_description: str, sector: str) -> Dict[str, Any]:
-        """Generate mock DCF assumptions based on sector."""
+        """Generate mock DCF assumptions based on sector as fallback."""
         from app.agents.tools import SECTOR_BENCHMARKS
         
         benchmarks = SECTOR_BENCHMARKS.get(sector, SECTOR_BENCHMARKS["Technology"])
@@ -153,5 +185,7 @@ Provide realistic 5-year projections based on sector benchmarks and industry dyn
                 "growth": f"Revenue growth reflects {sector} sector dynamics with normalization over projection period.",
                 "margins": f"EBITDA margin expansion driven by operational efficiency initiatives typical in {sector}.",
                 "valuation": f"WACC and exit multiples based on {sector} sector benchmarks and comparable transactions."
-            }
+            },
+            "data_source": "llm_generated_fallback",
+            "caveats": "Sector-typical assumptions used due to service unavailability."
         }

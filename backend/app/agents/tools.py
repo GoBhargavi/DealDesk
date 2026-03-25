@@ -1,7 +1,9 @@
-"""LangChain tools for M&A agents."""
+"""LangChain tools for M&A agents with MCP integration."""
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from langchain.tools import tool
+
+from app.services.mcp_registry import mcp_registry
 
 
 SECTOR_BENCHMARKS = {
@@ -49,55 +51,61 @@ SECTOR_BENCHMARKS = {
         "typical_ebitda_margin": 0.12,
         "typical_revenue_growth": 0.04,
         "typical_wacc": 0.09,
-        "typical_exit_multiple": 11.0,
-        "median_ev_ebitda": 10.5,
+        "typical_exit_multiple": 14.0,
+        "median_ev_ebitda": 11.0,
         "median_ev_revenue": 1.5
     },
-    "Fintech": {
-        "typical_ebitda_margin": 0.30,
-        "typical_revenue_growth": 0.20,
-        "typical_wacc": 0.12,
+    "Real Estate": {
+        "typical_ebitda_margin": 0.60,
+        "typical_revenue_growth": 0.03,
+        "typical_wacc": 0.08,
         "typical_exit_multiple": 20.0,
-        "median_ev_ebitda": 25.0,
+        "median_ev_ebitda": 22.0,
         "median_ev_revenue": 8.0
     }
 }
 
-
 MOCK_TRANSACTIONS = {
     "Technology": [
-        {"company": "CloudSys Inc", "date": "2024-01", "value": 850, "revenue": 120, "ebitda": 28, "ev_revenue": 7.1, "ev_ebitda": 30.4, "pe": 42.0},
-        {"company": "DataTech Corp", "date": "2024-02", "value": 2100, "revenue": 310, "ebitda": 78, "ev_revenue": 6.8, "ev_ebitda": 26.9, "pe": 38.5},
-        {"company": "SoftStream", "date": "2023-11", "value": 450, "revenue": 72, "ebitda": 16, "ev_revenue": 6.3, "ev_ebitda": 28.1, "pe": 35.2},
-        {"company": "CodeBase Solutions", "date": "2023-09", "value": 1800, "revenue": 280, "ebitda": 70, "ev_revenue": 6.4, "ev_ebitda": 25.7, "pe": 40.1},
+        {"company": "TechCorp A", "transaction_date": "2024-06", "deal_value_usd_m": 1200, "revenue_usd_m": 180, "ebitda_usd_m": 45, "ev_revenue": 6.7, "ev_ebitda": 26.7, "p_e": 32.0},
+        {"company": "CloudSys B", "transaction_date": "2024-04", "deal_value_usd_m": 850, "revenue_usd_m": 120, "ebitda_usd_m": 30, "ev_revenue": 7.1, "ev_ebitda": 28.3, "p_e": 35.0},
+        {"company": "DataFlow C", "transaction_date": "2024-02", "deal_value_usd_m": 650, "revenue_usd_m": 95, "ebitda_usd_m": 24, "ev_revenue": 6.8, "ev_ebitda": 27.1, "p_e": 33.0},
+        {"company": "AIStartup D", "transaction_date": "2023-11", "deal_value_usd_m": 450, "revenue_usd_m": 60, "ebitda_usd_m": 15, "ev_revenue": 7.5, "ev_ebitda": 30.0, "p_e": 38.0},
+        {"company": "SaaSPlatform E", "transaction_date": "2023-09", "deal_value_usd_m": 1100, "revenue_usd_m": 165, "ebitda_usd_m": 41, "ev_revenue": 6.7, "ev_ebitda": 26.8, "p_e": 31.0},
+        {"company": "CyberSec F", "transaction_date": "2023-07", "deal_value_usd_m": 720, "revenue_usd_m": 108, "ebitda_usd_m": 27, "ev_revenue": 6.7, "ev_ebitda": 26.7, "p_e": 34.0},
     ],
     "Healthcare": [
-        {"company": "MedDevice Pro", "date": "2024-01", "value": 620, "revenue": 95, "ebitda": 21, "ev_revenue": 6.5, "ev_ebitda": 29.5, "pe": 36.0},
-        {"company": "BioHealth Systems", "date": "2023-12", "value": 1200, "revenue": 185, "ebitda": 38, "ev_revenue": 6.5, "ev_ebitda": 31.6, "pe": 38.2},
-        {"company": "DiagnoTech", "date": "2023-08", "value": 380, "revenue": 58, "ebitda": 12, "ev_revenue": 6.6, "ev_ebitda": 31.7, "pe": 34.8},
+        {"company": "BioMed A", "transaction_date": "2024-05", "deal_value_usd_m": 950, "revenue_usd_m": 210, "ebitda_usd_m": 42, "ev_revenue": 4.5, "ev_ebitda": 22.6, "p_e": 28.0},
+        {"company": "HealthTech B", "transaction_date": "2024-03", "deal_value_usd_m": 680, "revenue_usd_m": 155, "ebitda_usd_m": 31, "ev_revenue": 4.4, "ev_ebitda": 21.9, "p_e": 26.0},
+        {"company": "PharmaServ C", "transaction_date": "2023-12", "deal_value_usd_m": 520, "revenue_usd_m": 120, "ebitda_usd_m": 24, "ev_revenue": 4.3, "ev_ebitda": 21.7, "p_e": 25.0},
+        {"company": "MedDevice D", "transaction_date": "2023-10", "deal_value_usd_m": 780, "revenue_usd_m": 175, "ebitda_usd_m": 35, "ev_revenue": 4.5, "ev_ebitda": 22.3, "p_e": 27.0},
     ],
     "Energy": [
-        {"company": "GreenPower Co", "date": "2024-02", "value": 1500, "revenue": 320, "ebitda": 115, "ev_revenue": 4.7, "ev_ebitda": 13.0, "pe": 18.5},
-        {"company": "SolarGen Inc", "date": "2023-10", "value": 920, "revenue": 180, "ebitda": 62, "ev_revenue": 5.1, "ev_ebitda": 14.8, "pe": 20.2},
+        {"company": "GreenPower A", "transaction_date": "2024-04", "deal_value_usd_m": 2200, "revenue_usd_m": 440, "ebitda_usd_m": 154, "ev_revenue": 5.0, "ev_ebitda": 14.3, "p_e": 18.0},
+        {"company": "OilField B", "transaction_date": "2024-01", "deal_value_usd_m": 1800, "revenue_usd_m": 360, "ebitda_usd_m": 126, "ev_revenue": 5.0, "ev_ebitda": 14.3, "p_e": 17.0},
+        {"company": "GasUtility C", "transaction_date": "2023-08", "deal_value_usd_m": 1400, "revenue_usd_m": 280, "ebitda_usd_m": 98, "ev_revenue": 5.0, "ev_ebitda": 14.3, "p_e": 16.0},
     ],
     "Financials": [
-        {"company": "PayFin Solutions", "date": "2023-11", "value": 780, "revenue": 145, "ebitda": 68, "ev_revenue": 5.4, "ev_ebitda": 11.5, "pe": 16.8},
-        {"company": "InsurTech Corp", "date": "2024-01", "value": 1100, "revenue": 210, "ebitda": 95, "ev_revenue": 5.2, "ev_ebitda": 11.6, "pe": 15.5},
+        {"company": "FinServ A", "transaction_date": "2024-06", "deal_value_usd_m": 1800, "revenue_usd_m": 360, "ebitda_usd_m": 162, "ev_revenue": 5.0, "ev_ebitda": 11.1, "p_e": 14.0},
+        {"company": "PayTech B", "transaction_date": "2024-03", "deal_value_usd_m": 1200, "revenue_usd_m": 240, "ebitda_usd_m": 108, "ev_revenue": 5.0, "ev_ebitda": 11.1, "p_e": 15.0},
+        {"company": "InsurTech C", "transaction_date": "2023-11", "deal_value_usd_m": 850, "revenue_usd_m": 170, "ebitda_usd_m": 77, "ev_revenue": 5.0, "ev_ebitda": 11.0, "p_e": 13.0},
     ],
     "Industrials": [
-        {"company": "LogiFlow Inc", "date": "2023-09", "value": 340, "revenue": 85, "ebitda": 13, "ev_revenue": 4.0, "ev_ebitda": 26.2, "pe": 28.0},
-        {"company": "Manufacturing Pro", "date": "2023-12", "value": 890, "revenue": 195, "ebitda": 28, "ev_revenue": 4.6, "ev_ebitda": 31.8, "pe": 32.5},
+        {"company": "Manufacturing A", "transaction_date": "2024-05", "deal_value_usd_m": 850, "revenue_usd_m": 472, "ebitda_usd_m": 71, "ev_revenue": 1.8, "ev_ebitda": 12.0, "p_e": 15.0},
+        {"company": "AutoParts B", "transaction_date": "2024-02", "deal_value_usd_m": 620, "revenue_usd_m": 344, "ebitda_usd_m": 52, "ev_revenue": 1.8, "ev_ebitda": 11.9, "p_e": 14.0},
+        {"company": "Logistics C", "transaction_date": "2023-09", "deal_value_usd_m": 480, "revenue_usd_m": 267, "ebitda_usd_m": 40, "ev_revenue": 1.8, "ev_ebitda": 12.0, "p_e": 14.0},
     ],
     "Consumer": [
-        {"company": "RetailMax", "date": "2023-10", "value": 560, "revenue": 180, "ebitda": 20, "ev_revenue": 3.1, "ev_ebitda": 28.0, "pe": 22.0},
-        {"company": "Consumer Goods Co", "date": "2024-02", "value": 720, "revenue": 210, "ebitda": 26, "ev_revenue": 3.4, "ev_ebitda": 27.7, "pe": 24.5},
+        {"company": "Retail A", "transaction_date": "2024-04", "deal_value_usd_m": 650, "revenue_usd_m": 433, "ebitda_usd_m": 52, "ev_revenue": 1.5, "ev_ebitda": 12.5, "p_e": 16.0},
+        {"company": "FoodBrand B", "transaction_date": "2024-01", "deal_value_usd_m": 520, "revenue_usd_m": 347, "ebitda_usd_m": 42, "ev_revenue": 1.5, "ev_ebitda": 12.4, "p_e": 15.0},
+        {"company": "Fashion C", "transaction_date": "2023-10", "deal_value_usd_m": 380, "revenue_usd_m": 253, "ebitda_usd_m": 30, "ev_revenue": 1.5, "ev_ebitda": 12.7, "p_e": 17.0},
     ],
-    "Fintech": [
-        {"company": "FinStream Tech", "date": "2024-01", "value": 950, "revenue": 120, "ebitda": 38, "ev_revenue": 7.9, "ev_ebitda": 25.0, "pe": 38.0},
-        {"company": "PaymentHub", "date": "2023-12", "value": 1400, "revenue": 180, "ebitda": 58, "ev_revenue": 7.8, "ev_ebitda": 24.1, "pe": 36.5},
+    "Real Estate": [
+        {"company": "REIT A", "transaction_date": "2024-06", "deal_value_usd_m": 3200, "revenue_usd_m": 400, "ebitda_usd_m": 240, "ev_revenue": 8.0, "ev_ebitda": 13.3, "p_e": 22.0},
+        {"company": "PropDev B", "transaction_date": "2024-03", "deal_value_usd_m": 2400, "revenue_usd_m": 300, "ebitda_usd_m": 180, "ev_revenue": 8.0, "ev_ebitda": 13.3, "p_e": 21.0},
+        {"company": "LogisticsRE C", "transaction_date": "2023-12", "deal_value_usd_m": 1800, "revenue_usd_m": 225, "ebitda_usd_m": 135, "ev_revenue": 8.0, "ev_ebitda": 13.3, "p_e": 20.0},
     ]
 }
-
 
 MOCK_NEWS_TEMPLATES = [
     {"source": "Reuters", "sentiment": "positive"},
@@ -112,6 +120,10 @@ MOCK_NEWS_TEMPLATES = [
     {"source": "The Economist", "sentiment": "negative"},
 ]
 
+
+# ============================================================================
+# Core M&A Tools
+# ============================================================================
 
 @tool
 def get_sector_benchmarks(sector: str) -> Dict[str, Any]:
@@ -168,3 +180,206 @@ def calculate_wacc(
     
     wacc = (equity_ratio * cost_of_equity) + (debt_ratio * cost_of_debt * (1 - tax_rate))
     return round(wacc, 4)
+
+
+# ============================================================================
+# MCP-Backed Tools
+# ============================================================================
+
+def get_mcp_tools_for_agent(agent_type: str) -> List[Any]:
+    """
+    Get available MCP tools for a specific agent type.
+    
+    Args:
+        agent_type: Type of agent (comps, dcf, news, document, pitchbook)
+        
+    Returns:
+        List of available MCP tools for the agent
+    """
+    tool_mapping = {
+        "comps": ["financial_data", "sec_edgar"],
+        "dcf": ["financial_data"],
+        "news": ["news"],
+        "document": ["sec_edgar"],
+        "pitchbook": ["financial_data", "sec_edgar", "news"]
+    }
+    
+    server_types = tool_mapping.get(agent_type, [])
+    if server_types:
+        return mcp_registry.get_tools(server_types)
+    return []
+
+
+@tool
+def search_sec_filings(company: str, form_type: str = "10-K", date_from: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Search SEC filings for a company. MCP-backed tool.
+    
+    Args:
+        company: Company name or ticker symbol
+        form_type: SEC form type (10-K, 10-Q, 8-K, etc.)
+        date_from: Start date in YYYY-MM-DD format (optional)
+        
+    Returns:
+        Dictionary with filing results
+    """
+    tools = mcp_registry.get_tools(["sec_edgar"])
+    if tools:
+        # Use the first available SEC EDGAR tool
+        for tool in tools:
+            if "search_filings" in tool.name:
+                try:
+                    return tool.func(company=company, form_type=form_type, date_from=date_from)
+                except Exception as e:
+                    return {"success": False, "error": str(e), "filings": []}
+    
+    # Fallback: return empty result with MCP unavailable message
+    return {
+        "success": False,
+        "error": "SEC EDGAR MCP server not connected",
+        "filings": [],
+        "note": "Connect SEC EDGAR MCP server in Settings to enable this feature"
+    }
+
+
+@tool
+def get_stock_data(ticker: str) -> Dict[str, Any]:
+    """
+    Get stock price and financial data for a company. MCP-backed tool.
+    
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
+        
+    Returns:
+        Dictionary with stock data including price, ratios, etc.
+    """
+    tools = mcp_registry.get_tools(["financial_data"])
+    if tools:
+        for tool in tools:
+            if "get_stock_price" in tool.name:
+                try:
+                    return tool.func(ticker=ticker)
+                except Exception as e:
+                    return {"success": False, "error": str(e)}
+    
+    return {
+        "success": False,
+        "error": "Financial data MCP server not connected",
+        "note": "Connect Financial Data MCP server in Settings to enable this feature"
+    }
+
+
+@tool
+def get_financial_ratios(ticker: str) -> Dict[str, Any]:
+    """
+    Get financial valuation ratios (P/E, EV/EBITDA, etc.). MCP-backed tool.
+    
+    Args:
+        ticker: Stock ticker symbol
+        
+    Returns:
+        Dictionary with financial ratios
+    """
+    tools = mcp_registry.get_tools(["financial_data"])
+    if tools:
+        for tool in tools:
+            if "get_financial_ratios" in tool.name:
+                try:
+                    return tool.func(ticker=ticker)
+                except Exception as e:
+                    return {"success": False, "error": str(e)}
+    
+    return {
+        "success": False,
+        "error": "Financial data MCP server not connected",
+        "note": "Connect Financial Data MCP server in Settings to enable this feature"
+    }
+
+
+@tool
+def post_to_slack(channel: str, message: str) -> Dict[str, Any]:
+    """
+    Post a message to a Slack channel. MCP-backed tool.
+    
+    Args:
+        channel: Channel name or ID (e.g., '#deals', 'C1234567890')
+        message: Message text to post
+        
+    Returns:
+        Dictionary with success status
+    """
+    tools = mcp_registry.get_tools(["slack"])
+    if tools:
+        for tool in tools:
+            if "post_message" in tool.name:
+                try:
+                    return tool.func(channel=channel, text=message)
+                except Exception as e:
+                    return {"success": False, "error": str(e)}
+    
+    return {
+        "success": False,
+        "error": "Slack MCP server not connected",
+        "note": "Connect Slack MCP server in Settings to enable this feature"
+    }
+
+
+@tool
+def search_news_mcp(query: str, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Search for news articles using MCP news service. MCP-backed tool.
+    
+    Args:
+        query: Search query string
+        from_date: Start date in YYYY-MM-DD format (optional)
+        to_date: End date in YYYY-MM-DD format (optional)
+        
+    Returns:
+        Dictionary with news articles
+    """
+    tools = mcp_registry.get_tools(["news"])
+    if tools:
+        for tool in tools:
+            if "search_news" in tool.name:
+                try:
+                    return tool.func(query=query, from_date=from_date, to_date=to_date)
+                except Exception as e:
+                    return {"success": False, "error": str(e), "articles": []}
+    
+    return {
+        "success": False,
+        "error": "News MCP server not connected",
+        "articles": [],
+        "note": "Connect News MCP server in Settings to enable this feature"
+    }
+
+
+# ============================================================================
+# Tool List Exports
+# ============================================================================
+
+def get_all_mcp_tools() -> List[Any]:
+    """Get all available MCP tools from connected servers."""
+    return mcp_registry.get_tools()
+
+
+def get_agent_toolset(agent_type: str) -> List[Any]:
+    """
+    Get the complete toolset for an agent including core and MCP tools.
+    
+    Args:
+        agent_type: Type of agent
+        
+    Returns:
+        Combined list of core tools and MCP tools
+    """
+    core_tools = [
+        get_sector_benchmarks,
+        get_recent_transactions,
+        search_company_news,
+        calculate_wacc
+    ]
+    
+    mcp_tools = get_mcp_tools_for_agent(agent_type)
+    
+    return core_tools + mcp_tools
